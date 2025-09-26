@@ -1,0 +1,87 @@
+#!/bin/bash
+# user_mgmt.sh - Automated Linux User & Permission Management
+# Author: Meghna
+# Date: 2025
+
+LOGFILE="/var/log/user_mgmt.log"
+
+# Check root privileges
+if [[ $EUID -ne 0 ]]; then
+   echo "❌ This script must be run as root (use sudo)."
+   exit 1
+fi
+
+# Function: Add user
+add_user() {
+    read -p "Enter username: " username
+    read -p "Enter group (optional): " group
+
+    if id "$username" &>/dev/null; then
+        echo "⚠️ User $username already exists!" | tee -a $LOGFILE
+        return
+    fi
+
+    if [ -z "$group" ]; then
+        useradd -m -s /bin/bash "$username"
+    else
+        groupadd -f "$group"
+        useradd -m -s /bin/bash -g "$group" "$username"
+    fi
+
+    passwd=$(openssl rand -base64 8)
+    echo "$username:$passwd" | chpasswd
+    echo "✅ User $username created with password: $passwd" | tee -a $LOGFILE
+}
+
+# Function: Delete user
+delete_user() {
+    read -p "Enter username to delete: " username
+    if id "$username" &>/dev/null; then
+        userdel -r "$username"
+        echo "🗑️ User $username deleted." | tee -a $LOGFILE
+    else
+        echo "⚠️ User $username does not exist." | tee -a $LOGFILE
+    fi
+}
+
+# Function: List users
+list_users() {
+    echo "------ User Report ------" | tee -a $LOGFILE
+    awk -F: '$3 >= 1000 {print $1}' /etc/passwd
+    echo "-------------------------" | tee -a $LOGFILE
+}
+
+# Function: Bulk add users from file
+bulk_add() {
+    read -p "Enter file path (list of usernames): " file
+    if [ ! -f "$file" ]; then
+        echo "❌ File not found!"
+        return
+    fi
+    while read -r user; do
+        useradd -m -s /bin/bash "$user"
+        passwd=$(openssl rand -base64 8)
+        echo "$user:$passwd" | chpasswd
+        echo "✅ User $user created with password: $passwd" | tee -a $LOGFILE
+    done < "$file"
+}
+
+# Main Menu
+while true; do
+    echo -e "\n===== User Management Menu ====="
+    echo "1. Add User"
+    echo "2. Delete User"
+    echo "3. List Users"
+    echo "4. Bulk Add Users (from file)"
+    echo "5. Exit"
+    read -p "Choose an option: " choice
+
+    case $choice in
+        1) add_user ;;
+        2) delete_user ;;
+        3) list_users ;;
+        4) bulk_add ;;
+        5) echo "👋 Exiting..."; exit ;;
+        *) echo "❌ Invalid option" ;;
+    esac
+done
